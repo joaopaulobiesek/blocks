@@ -1,0 +1,35 @@
+name: Auto Pull Request
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-pr-and-merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Autenticar com GH_PAT
+        run: echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
+
+      - name: Criar Pull Request automaticamente
+        run: |
+          gh pr create \
+            --base main \
+            --head "${GITHUB_REF_NAME}" \
+            --title "Auto PR de ${GITHUB_REF_NAME}" \
+            --body "Criado automaticamente via workflow." \
+          || echo "PR já existe"
+
+      - name: Fazer merge automático
+        run: |
+          PR_URL=$(gh pr view "${GITHUB_REF_NAME}" --json url -q .url)
+          gh pr merge "$PR_URL" --merge --delete-branch || echo "Já foi feito ou PR fechado"

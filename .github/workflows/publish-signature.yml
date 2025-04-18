@@ -1,0 +1,64 @@
+name: GPG Signature Validator
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+    paths:
+      - 'commits/signatures/**'
+
+jobs:
+  verify-and-publish:
+    name: Verificar e Publicar Assinatura
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v3
+
+      - name: Importar chave pública GPG do autor
+        run: |
+          gpg --import .github/workflows/gpg.key
+          FINGERPRINT=$(gpg --with-colons --import-options show-only --import .github/workflows/gpg.key | awk -F: '/^fpr:/ { print $10 }' | head -n 1)
+          echo "Fingerprint encontrado: $FINGERPRINT"
+          echo "$FINGERPRINT:6:" | gpg --import-ownertrust
+          
+      - name: Validar estrutura de diretórios
+        run: |
+          echo "📁 Verificando estrutura em commits/signatures..."
+          if [ ! -d "commits/signatures" ]; then
+            echo "❌ Pasta commits/signatures não encontrada!"
+            exit 1
+          fi
+          
+      - name: Exibir assinatura do último commit
+        run: git log -1 --show-signature
+
+      - name: Verificar arquivos de assinatura
+        run: |
+          echo "🔍 Validando arquivos de assinatura..."
+          find commits/signatures -type f -name "*.txt" | while read file; do
+            echo "✔️ Validando $file"
+            grep -q "DOCUMENT ID" "$file" || { echo "❌ Falta DOCUMENT ID em $file"; exit 1; }
+            grep -q "USER ID" "$file" || { echo "❌ Falta USER ID em $file"; exit 1; }
+            grep -q "HASH" "$file" || { echo "❌ Falta HASH em $file"; exit 1; }
+            grep -q "SIGNED AT" "$file" || { echo "❌ Falta SIGNED AT em $file"; exit 1; }
+          done
+
+      - name: Verificar commits assinados (GPG ou SSH)
+        run: |
+          echo "🔐 Verificando se os commits são assinados..."
+          SIGNATURE_STATUS=$(git log -1 --show-signature | grep "Good signature" || true)
+          if [ -z "$SIGNATURE_STATUS" ]; then
+            echo "❌ O último commit não está assinado corretamente! Deve conter assinatura válida com GPG ou SSH."
+            exit 1
+          fi
+          echo "✅ Commit assinado corretamente."
+
+      - name: Log dos últimos commits (auditoria)
+        run: |
+          echo "📜 Log dos últimos 5 commits:"
+          git log -n 5 --pretty=format:"🔸 %h | %an | %G? | %s" --abbrev-commit
+
+      - name: Conclusão
+        run: echo "✅ Workflow finalizado com sucesso!"
